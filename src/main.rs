@@ -1,18 +1,18 @@
 use bevy::prelude::*;
-use terrain::ChunkSiteComponent;
 
 mod debug;
 mod terrain;
 mod top_down;
+mod hex_layout;
+mod mesh;
 
 fn main() {
     App::build()
         .add_resource(Msaa { samples: 4 })
         .add_default_plugins()
-        .add_plugin(terrain::TerrainPlugin::default())
+        .add_plugin(terrain2::TerrainPlugin::default())
         .add_plugin(top_down::TopDownPlugin::default())
         .add_plugin(debug::DebugPlugin::default())
-        //.add_plugin(two_d::TwoDPlugin::default())
         .add_startup_system(setup3d.system())
         .run();
 }

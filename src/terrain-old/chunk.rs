@@ -14,15 +14,15 @@ pub struct ChunkSiteComponent {
 
 #[derive(Debug)]
 pub struct ChunkComponent {
-    pub chunk_loaded: bool,
+    pub center: CubeHexCoord,
     pub created: Instant,
     pub distance_to_nearest_site: i32,
+    pub loaded: bool,
 }
 
 #[derive(Bundle)]
 pub struct ChunkComponents {
-    pub chunk_index: CubeHexCoord,
-    pub chunk_info: ChunkComponent,
+    pub chunk: ChunkComponent,
     pub voxel: HexVoxelChunkComponent,
 }
 
@@ -111,9 +111,9 @@ pub fn chunk_spawner(
                         ..Default::default()
                     })
                     .with_bundle(ChunkComponents {
-                        chunk_index: chunk,
-                        chunk_info: ChunkComponent {
-                            chunk_loaded: false,
+                        chunk: ChunkComponent {
+                            center: chunk,
+                            loaded: false,
                             distance_to_nearest_site: 0, // will be computed by another system
                             created: time.instant.unwrap(),
                         },
@@ -128,7 +128,7 @@ pub fn chunk_spawner(
 }
 
 pub fn chunk_solver(
-    mut query: Query<(&CubeHexCoord, &mut ChunkComponent)>,
+    mut query: Query<(&mut ChunkComponent)>,
     mut site_query: Query<(Entity, &mut ChunkSiteComponent)>,
 ) {
     // compute chunk distances (for LODs and despawning)
@@ -140,10 +140,27 @@ pub fn chunk_solver(
         site.fresh = false;
 
         // loop through all chunks and update distances
-        for (coord, mut chunk) in &mut query.iter() {
+        for (mut chunk) in &mut query.iter() {
             // TODO: handle multiple chunk sites
-            chunk.distance_to_nearest_site = site.last_loaded_chunk.unwrap().distance_step(coord);
+            chunk.distance_to_nearest_site = site.last_loaded_chunk.unwrap().distance_step(&chunk.center);
         }
+    }
+}
+
+pub fn chunk_voxel_loader (
+    hex_layout: Res<CubeHexLayout>,
+    voxel_gen: Res<HexVoxelGenerator>,
+    mut query: Query<(&mut HexVoxelChunkComponent, &ChunkComponent)>,
+) {
+    for (mut voxel_component, mut chunk) in &mut query.iter() {
+        if (voxel_component.loaded) {
+            continue;
+        }
+
+        // mark as loaded
+        voxel_component.loaded = true;
+
+
     }
 }
 
@@ -156,7 +173,7 @@ pub fn chunk_loader(
     // enumerate chunks that needs to be loaded
     for (mut chunk_info, mut mesh) in &mut query.iter() {
         // skip chunks that are already loaded
-        if chunk_info.chunk_loaded {
+        if chunk_info.loaded {
             continue;
         }
 
@@ -173,26 +190,27 @@ pub fn chunk_loader(
         //     Vec3::unit_x(),
         //     hex_layout.size,
         // );
+
         if mesh.id == chunk_tracker.placeholder_mesh.unwrap().id {
             //*mesh = meshes.add(new_mesh);
         } else {
             //meshes.set(*mesh, new_mesh)
         }
 
-        chunk_info.chunk_loaded = true;
+        chunk_info.loaded = true;
     }
 }
 
 pub fn chunk_despawner(
     mut commands: Commands,
-    mut chunk_tracker: ResMut<ChunkTracker>,
     time: Res<Time>,
-    mut query: Query<(Entity, &ChunkComponent, &CubeHexCoord)>,
+    mut chunk_tracker: ResMut<ChunkTracker>,
+    mut query: Query<(Entity, &ChunkComponent)>,
 ) {
     // only try to unload when timer is done
     chunk_tracker.despawn_timer.tick(time.delta_seconds);
     if chunk_tracker.despawn_timer.finished {
-        for (entity, chunk_info, coord) in &mut query.iter() {
+        for (entity, chunk_info) in &mut query.iter() {
             if chunk_info.distance_to_nearest_site > chunk_tracker.min_despawn_distance {
                 // despawn chunk
                 commands.despawn(entity);

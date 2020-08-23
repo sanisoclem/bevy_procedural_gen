@@ -8,7 +8,7 @@ pub struct HexVoxelChunkComponent {
     pub voxels: Vec<HexVoxel>,
     pub height: i32,
     pub radius: i32,
-    pub initialized: bool
+    pub loaded: bool,
 }
 
 pub struct HexVoxel {}
