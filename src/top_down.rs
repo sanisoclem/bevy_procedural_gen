@@ -1,9 +1,11 @@
 use bevy::{
     input::{keyboard::KeyCode, Input},
     prelude::*,
+    render::{
+        camera::{Camera, PerspectiveProjection, VisibleEntities},
+        render_graph::base,
+    },
 };
-use bevy::render::camera::{Camera, PerspectiveProjection, VisibleEntities};
-use bevy::render::render_graph::base;
 
 pub struct TopDownPlugin;
 
@@ -108,7 +110,7 @@ fn camera_movement_system(
     keyboard_input: Res<Input<KeyCode>>,
     mut query: Query<(
         &TopDownCameraOptions,
-        &crate::terrain::ChunkSite,
+        &crate::terrain::ChunkSiteComponent,
         &mut Translation,
         &Rotation,
     )>,

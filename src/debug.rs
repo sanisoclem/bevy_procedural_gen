@@ -1,7 +1,8 @@
-use crate::terrain::ChunkGenerator;
-use bevy::diagnostic::{Diagnostic, Diagnostics, FrameTimeDiagnosticsPlugin};
-use bevy::prelude::*;
-use bevy::core::Timer;
+use bevy::{
+    core::Timer,
+    diagnostic::{Diagnostic, Diagnostics, FrameTimeDiagnosticsPlugin},
+    prelude::*,
+};
 use std::time::Duration;
 
 pub struct DebugPlugin {
@@ -88,16 +89,9 @@ impl DebugPlugin {
             });
     }
 
-    fn update_debug(
-        generator: Res<ChunkGenerator>,
-        state: Res<DebugState>,
-        mut query: Query<&mut Text>,
-    ) {
+    fn update_debug(state: Res<DebugState>, mut query: Query<&mut Text>) {
         for mut text in &mut query.iter() {
-            text.value = format!(
-                "UV Scale: {}\nScale: {}\n Bias: {}. {}",
-                generator.uscale, generator.scale, generator.bias, state.message
-            );
+            text.value = format!("{}", state.message);
         }
     }
 

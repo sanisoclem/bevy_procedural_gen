@@ -1,6 +1,4 @@
-use bevy::ecs::lazy_static::lazy_static;
-use bevy::math::Mat2;
-use bevy::prelude::*;
+use bevy::{ecs::lazy_static::lazy_static, math::Mat2, prelude::*};
 use std::ops::Add;
 
 lazy_static! {
@@ -19,6 +17,7 @@ pub trait HexLayout<HexCoord, SpaceCoord> {
     fn hex_to_space(&self, hex: HexCoord) -> SpaceCoord;
     fn space_to_hex(&self, space: SpaceCoord) -> HexCoord;
     fn get_neighbors(&self, hex: HexCoord, max_distance: i32) -> Self::HexCoordIterator;
+    fn get_chunk_neighbors(&self, chunk_center: HexCoord, max_distance: i32) -> Self::HexCoordIterator;
     fn get_ring(&self, center: HexCoord, distance: i32) -> Self::HexCoordIterator;
 }
 
@@ -28,6 +27,7 @@ impl CubeHexCoord {
     pub fn from_axis_coord(q: i32, r: i32) -> Self {
         CubeHexCoord(q, r, -(q + r))
     }
+
     pub fn distance_step(&self, b: &CubeHexCoord) -> i32 {
         (i32::abs(self.0 - b.0) + i32::abs(self.1 - b.1) + i32::abs(self.2 - b.2)) / 2
     }
@@ -39,6 +39,7 @@ impl Into<Vec2> for CubeHexCoord {
 }
 impl Add for CubeHexCoord {
     type Output = Self;
+
     #[inline]
     fn add(self, other: Self) -> Self {
         Self(self.0 + other.0, self.1 + other.1, self.2 + self.2)
@@ -47,7 +48,8 @@ impl Add for CubeHexCoord {
 
 pub struct CubeHexLayout {
     pub space_origin: CubeHexCoord,
-    pub size: f32,
+    pub hex_size: f32,
+    pub chunk_radius: i32,
 }
 impl CubeHexLayout {
     pub fn hex_coord_from_fractional_coord(&self, frac: Vec2) -> CubeHexCoord {
@@ -77,7 +79,8 @@ impl Default for CubeHexLayout {
     fn default() -> Self {
         CubeHexLayout {
             space_origin: CubeHexCoord(0, 0, 0),
-            size: 30.0,
+            hex_size: 30.0,
+            chunk_radius: 10,
         }
     }
 }
@@ -86,17 +89,17 @@ impl HexLayout<CubeHexCoord, Vec2> for CubeHexLayout {
     type HexCoordIterator = Box<dyn Iterator<Item = CubeHexCoord>>;
 
     fn hex_to_space(&self, hex: CubeHexCoord) -> Vec2 {
-        HEX2SPACE.mul_vec2((self.space_origin + hex).into()) * self.size
+        HEX2SPACE.mul_vec2((self.space_origin + hex).into()) * self.hex_size
     }
 
     fn space_to_hex(&self, space: Vec2) -> CubeHexCoord {
-        let frac = SPACE2HEX.mul_vec2(space) / self.size;
+        let frac = SPACE2HEX.mul_vec2(space) / self.hex_size;
         self.space_origin + self.hex_coord_from_fractional_coord(frac)
     }
 
     fn get_neighbors(&self, hex: CubeHexCoord, max_distance: i32) -> Self::HexCoordIterator {
         Box::new((1..=max_distance).flat_map(move |ring| {
-            (0..=ring).flat_map(move |i| {
+            (1..=ring).flat_map(move |i| {
                 let indexes = [i, ring - i, -ring];
                 // rotate 6 times
                 (0..6).map(move |rot| {
@@ -109,8 +112,27 @@ impl HexLayout<CubeHexCoord, Vec2> for CubeHexLayout {
         }))
     }
 
+    fn get_chunk_neighbors(&self, chunk_center: CubeHexCoord, max_distance: i32) -> Self::HexCoordIterator {
+        let radius = self.chunk_radius;
+        Box::new((1..=max_distance).flat_map(move |ring| {
+            let anchor = [-ring * (2 * radius + 1), radius * ring + ring, radius * ring];
+
+            (1..=ring).flat_map(move |i| {
+                let indexes = [anchor[0], anchor[1] - (i * (2 * radius + 1)) , anchor[2] - (radius * i)];
+
+                // rotate 6 times
+                (0..6).map(move |rot| {
+                    let m = if rot % 2 == 1 { -1 } else { 1 };
+                    let xi = (0 + rot) % 3;
+                    let yi = (1 + rot) % 3;
+                    chunk_center + CubeHexCoord::from_axis_coord(indexes[xi] * m, indexes[yi] * m)
+                })
+            })
+        }))
+    }
+
     fn get_ring(&self, center: CubeHexCoord, distance: i32) -> Self::HexCoordIterator {
-        Box::new((0..=distance).flat_map(move |i| {
+        Box::new((1..=distance).flat_map(move |i| {
             let indexes = [i, distance - i, -distance];
             // rotate 6 times
             (0..6).map(move |rot| {

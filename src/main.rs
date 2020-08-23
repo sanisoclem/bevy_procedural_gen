@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use terrain::ChunkSite;
+use terrain::ChunkSiteComponent;
 
 mod debug;
 mod terrain;
@@ -52,7 +52,7 @@ fn setup3d(
             ..Default::default()
         })
         .with(top_down::TopDownCameraOptions::default())
-        .with(ChunkSite::default())
+        .with(ChunkSiteComponent::default())
         .with_children(|parent| {
             parent
                 // camera

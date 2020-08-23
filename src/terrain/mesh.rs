@@ -1,7 +1,9 @@
-use bevy::prelude::*;
-use bevy::render::{
-    mesh::{VertexAttribute, VertexAttributeValues},
-    pipeline::PrimitiveTopology,
+use bevy::{
+    prelude::*,
+    render::{
+        mesh::{VertexAttribute, VertexAttributeValues},
+        pipeline::PrimitiveTopology,
+    },
 };
 
 pub fn calculate_normals(vertices: &[Vec3], indices: &[u32]) -> Vec<Vec3> {
@@ -134,7 +136,9 @@ pub fn mesh_hex_voxel(top: Vec3, bottom: Vec3, normal: Vec3, up: Vec3, size: f32
     // compute normals
     mesh.attributes.push(VertexAttribute {
         name: "Vertex_Normal".into(),
-        values: VertexAttributeValues::Float3(normals.iter().map(|n| [n.x(), n.y(), n.z()]).collect()),
+        values: VertexAttributeValues::Float3(
+            normals.iter().map(|n| [n.x(), n.y(), n.z()]).collect(),
+        ),
     });
 
     // compute UVs
