@@ -2,21 +2,36 @@ use bevy::prelude::*;
 use std::{
     collections::HashSet,
     hash::Hash,
+    marker::PhantomData,
     time::{Duration, Instant},
 };
 
 #[derive(Default)]
-pub struct TerrainPlugin;
-
-impl Plugin for TerrainPlugin {
-    fn build(&self, app: &mut AppBuilder) {}
+pub struct TerrainPlugin<'a, TChunkId, TTileId, TLayout> {
+    phantom: PhantomData<&'a (TChunkId, TTileId, TLayout)>,
 }
 
-impl<TChunkId, TTileId, TLayout> TerrainPlugin
+impl<TChunkId, TTileId, TLayout> Plugin for TerrainPlugin<'static, TChunkId, TTileId, TLayout>
 where
     TChunkId: ChunkId,
     TTileId: TileId,
-    TLayout: Layout<TChunkId = TChunkId>,
+    TLayout: Layout<TChunkId = TChunkId> + Default,
+{
+    fn build(&self, app: &mut AppBuilder) {
+        app.init_resource::<Placeholders>()
+            .init_resource::<ChunkTracker<TChunkId>>()
+            .init_resource::<TLayout>()
+            .add_startup_system(Self::setup.system())
+            .add_system(Self::chunk_spawner.system())
+            .add_system(Self::chunk_solver.system());
+    }
+}
+
+impl<TChunkId, TTileId, TLayout> TerrainPlugin<'static, TChunkId, TTileId, TLayout>
+where
+    TChunkId: 'static + ChunkId,
+    TTileId: 'static + TileId,
+    TLayout: 'static + Layout<TChunkId = TChunkId>,
 {
     pub fn setup(
         layout: Res<TLayout>,
@@ -24,7 +39,7 @@ where
         mut materials: ResMut<Assets<StandardMaterial>>,
         mut placeholders: ResMut<Placeholders>,
     ) {
-        placeholders.placeholder_material = Some(materials.add(Color::rgb(0.1, 0.2, 0.1).into()));
+        placeholders.placeholder_mat  = Some(materials.add(Color::rgb(0.1, 0.2, 0.1).into()));
         placeholders.placeholder_mesh = Some(meshes.add(layout.get_placeholder_mesh()));
     }
 
@@ -39,7 +54,7 @@ where
         // load chunks around ChunkSites
         for (translation, mut site) in &mut query.iter() {
             // find which chunk we're currently on
-            let current_chunk = layout.get_current_chunk(&translation);
+            let current_chunk = layout.space_to_chunk(&translation);
 
             // skip this site if it hasn't moved chunks since the last load
             if let Some(last_loaded) = site.last_loaded_chunk {
@@ -49,7 +64,7 @@ where
             }
 
             // find neighboring chunks
-            let neighbors = layout.get_neighbors(&current_chunk, 1);
+            let neighbors = layout.get_chunk_neighbors(current_chunk, 1);
 
             // spawn chunks
             for chunk in std::iter::once(current_chunk).chain(neighbors) {
@@ -79,6 +94,7 @@ where
     }
 
     pub fn chunk_solver(
+        layout: Res<TLayout>,
         mut query: Query<&mut ChunkComponent<TChunkId>>,
         mut site_query: Query<(Entity, &mut ChunkSiteComponent<TChunkId>)>,
     ) {
@@ -93,29 +109,30 @@ where
             // loop through all chunks and update distances
             for mut chunk in &mut query.iter() {
                 // TODO: handle multiple chunk sites
-                chunk.distance_to_nearest_site =
-                    site.last_loaded_chunk.unwrap().distance_step(&chunk.center);
+                chunk.distance_to_nearest_site = layout.get_chunk_distance(&chunk.id, &site.last_loaded_chunk.unwrap());
             }
         }
     }
 }
 
-pub trait TileId: Eq + Hash {}
-pub trait ChunkId: Eq + Hash {}
+pub trait TileId: Eq + Hash + Sync + Send + Copy {}
+pub trait ChunkId: Eq + Hash + Sync + Send + Copy {}
 
-pub trait Layout {
+pub trait Layout: Sync + Send {
     type TTileId: TileId;
     type TChunkId: ChunkId;
     type TChunkIdIterator: Iterator<Item = Self::TChunkId>;
 
     fn get_placeholder_mesh(&self) -> Mesh;
-    fn get_chunk_neighbors(&self, chunk: &Self::TChunkId, distance: u16) -> Self::TChunkIdIterator;
+    fn get_chunk_neighbors(&self, chunk: Self::TChunkId, distance: i32) -> Self::TChunkIdIterator;
 
     fn chunk_to_space(&self, chunk: &Self::TChunkId) -> Vec3;
     fn tile_to_chunk(&self, tile: &Self::TTileId) -> Self::TChunkId;
     fn tile_to_space(&self, tile: &Self::TTileId) -> Translation;
-    fn space_to_tile(&self, space: Vec3) -> Self::TTileId;
-    fn space_to_chunk(&self, space: Vec3) -> Self::TChunkId;
+    fn space_to_tile(&self, space: &Vec3) -> Self::TTileId;
+    fn space_to_chunk(&self, space: &Vec3) -> Self::TChunkId;
+
+    fn get_chunk_distance(&self, a: &Self::TChunkId, b: &Self::TChunkId) -> i32;
 }
 
 #[derive(Default, Debug)]
