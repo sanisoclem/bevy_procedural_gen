@@ -222,11 +222,11 @@ impl Layout for CubeHexLayout {
     type TTileId = ExtrudedCubeHexCoord;
 
     fn get_placeholder_mesh(&self) -> Mesh {
-        crate::mesh::mesh_hex_outline(
+        crate::mesh::mesh_hex_plane(
             Vec3::default(),
             Vec3::unit_y(),
             Vec3::unit_z() * -1.0,
-            self.chunk_radius(),
+            self.chunk_radius() / 2.0,
         )
     }
 
@@ -297,7 +297,8 @@ impl Layout for CubeHexLayout {
     }
 
     fn get_chunk_distance(&self, a: &Self::TChunkId, b: &Self::TChunkId) -> i32 {
-        0
+        // TODO: fix, this returns distance in tiles not chunks
+        (i32::abs(a.0 - b.0) + i32::abs(a.1 - b.1) + i32::abs(a.2 - b.2)) / 2
     }
 }
 

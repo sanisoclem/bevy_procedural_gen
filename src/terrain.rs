@@ -24,7 +24,8 @@ where
             .init_resource::<TLayout>()
             .add_startup_system(Self::setup.system())
             .add_system(Self::chunk_spawner.system())
-            .add_system(Self::chunk_solver.system());
+            .add_system(Self::chunk_solver.system())
+            .add_system(Self::chunk_despawner.system());
     }
 }
 
@@ -40,7 +41,7 @@ where
         mut materials: ResMut<Assets<StandardMaterial>>,
         mut placeholders: ResMut<Placeholders>,
     ) {
-        placeholders.placeholder_mat = Some(materials.add(Color::rgb(0.1, 0.2, 0.1).into()));
+        placeholders.placeholder_mat = Some(materials.add(Color::rgb(0.1, 0.9, 0.1).into()));
         placeholders.placeholder_mesh = Some(meshes.add(layout.get_placeholder_mesh()));
     }
 
@@ -49,6 +50,7 @@ where
         time: Res<Time>,
         layout: Res<TLayout>,
         placeholders: Res<Placeholders>,
+        mut materials: ResMut<Assets<StandardMaterial>>,
         mut tracker: ResMut<ChunkTracker<TChunkId>>,
         mut query: Query<(&Translation, &mut ChunkSiteComponent<TChunkId>)>,
     ) {
@@ -65,7 +67,7 @@ where
             }
 
             // find neighboring chunks
-            let neighbors = layout.get_chunk_neighbors(current_chunk, 5);
+            let neighbors = layout.get_chunk_neighbors(current_chunk, 1);
 
             // spawn chunks
             for chunk in std::iter::once(current_chunk).chain(neighbors) {
@@ -77,7 +79,7 @@ where
                     commands
                         .spawn(PbrComponents {
                             mesh: placeholders.placeholder_mesh.unwrap(),
-                            material: placeholders.placeholder_mat.unwrap(),
+                            material: materials.add(Color::rgb(0.0, 0.0, 0.0).into()),
                             translation: Translation::new(pos.x(), pos.y(), pos.z()),
                             ..Default::default()
                         })
@@ -97,7 +99,9 @@ where
 
     pub fn chunk_solver(
         layout: Res<TLayout>,
-        mut query: Query<&mut ChunkComponent<TChunkId>>,
+        placeholders: Res<Placeholders>,
+        mut materials: ResMut<Assets<StandardMaterial>>,
+        mut query: Query<(&mut ChunkComponent<TChunkId>)>,
         mut site_query: Query<(Entity, &mut ChunkSiteComponent<TChunkId>)>,
     ) {
         // compute chunk distances (for LODs and despawning)
@@ -109,13 +113,44 @@ where
             site.fresh = false;
 
             // loop through all chunks and update distances
-            for mut chunk in &mut query.iter() {
+            for (mut chunk) in &mut query.iter() {
                 // TODO: handle multiple chunk sites
-                chunk.distance_to_nearest_site =
-                    layout.get_chunk_distance(&chunk.id, &site.last_loaded_chunk.unwrap());
-            }
+                chunk.distance_to_nearest_site = layout.get_chunk_distance(&chunk.id, &site.last_loaded_chunk.unwrap());
+
+                let intensity = ((chunk.distance_to_nearest_site)  % 256) as f32 / 256.0;
+                println!("updating material {:?}", intensity);
+                //let m = materials.get_mut(&mat).unwrap();
+                //m.albedo = Color::rgb(intensity, 0.0, 0.0);
+             }
         }
     }
+
+    pub fn chunk_despawner(
+        mut commands: Commands,
+        time: Res<Time>,
+        mut tracker: ResMut<ChunkTracker<TChunkId>>,
+        mut query: Query<(Entity, &ChunkComponent<TChunkId>)>,
+    ) {
+        // only try to unload when timer is done
+        tracker.despawn_timer.tick(time.delta_seconds);
+        if tracker.despawn_timer.finished {
+            for (entity, chunk_info) in &mut query.iter() {
+                if chunk_info.distance_to_nearest_site > tracker.min_despawn_distance {
+                    // despawn chunk
+                    // if tracker.try_despawn(chunk_info.id) {
+                    //     commands.despawn(entity);
+                    //     println!("despawning: {:?}", chunk_info.id)
+                    // }
+                    // TODO: queue and cleanup tasks
+                }
+            }
+
+            tracker.despawn_timer.reset();
+        }
+        // find chunks that can be unloaded
+        // mark them for despawning
+    }
+
 }
 
 pub trait TileId: Eq + Hash + Sync + Send + Copy + Debug {}
@@ -179,8 +214,8 @@ where
     fn default() -> Self {
         ChunkTracker {
             loaded_chunks: HashSet::new(),
-            despawn_timer: Timer::new(Duration::from_secs(5), true),
-            min_despawn_distance: 5,
+            despawn_timer: Timer::new(Duration::from_secs(1), true),
+            min_despawn_distance: 500,
         }
     }
 }
