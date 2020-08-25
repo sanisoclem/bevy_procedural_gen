@@ -3,6 +3,7 @@ use bevy::{
     diagnostic::{Diagnostic, Diagnostics, FrameTimeDiagnosticsPlugin},
     prelude::*,
 };
+use crate::terrain::*;
 use std::time::Duration;
 
 pub struct DebugPlugin {
@@ -89,9 +90,17 @@ impl DebugPlugin {
             });
     }
 
-    fn update_debug(state: Res<DebugState>, mut query: Query<&mut Text>) {
-        for mut text in &mut query.iter() {
-            text.value = format!("{}", state.message);
+    fn update_debug(
+        state: Res<DebugState>,
+        layout: Res<crate::hex_layout::CubeHexLayout>,
+        mut query: Query<&mut Text>,
+        mut query2: Query<(&crate::terrain::ChunkSiteComponent<crate::hex_layout::CubeHexCoord>, &Translation)>
+    ) {
+        for (site, translation) in &mut query2.iter() {
+            let current_chunk = layout.space_to_chunk(&translation);
+            for mut text in &mut query.iter() {
+                text.value = format!("{:?}", current_chunk);
+            }
         }
     }
 

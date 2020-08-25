@@ -197,7 +197,7 @@ impl CubeHexLayout {
 }
 impl Default for CubeHexLayout {
     fn default() -> Self {
-        CubeHexLayout::new(CubeHexCoord::default(), 1.0, 3, 1.0)
+        CubeHexLayout::new(CubeHexCoord::default(), 1.0, 50, 1.0)
     }
 }
 impl Layout for CubeHexLayout {
@@ -210,7 +210,7 @@ impl Layout for CubeHexLayout {
             Vec3::default(),
             Vec3::unit_y(),
             Vec3::unit_x(),
-            self.chunk_radius(),
+            1.0,
         )
     }
 
@@ -271,7 +271,6 @@ impl Layout for CubeHexLayout {
 
     fn space_to_tile(&self, space: &Vec3) -> Self::TTileId {
         let frac = SPACE2HEX.mul_vec2(Vec2::new(space.x(), space.z())) / self.tile_radius;
-        println!("Frac: {:?} input: {:?}, origin: {:?}", frac, space, self.space_origin);
         let y = (space.y() / self.tile_extrusion_height).floor() as i32;
         let hex = self.hex_coord_from_fractional_coord(frac) + self.space_origin;
         ExtrudedCubeHexCoord::new(hex, y)

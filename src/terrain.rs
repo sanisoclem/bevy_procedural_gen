@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use std::{
     collections::HashSet,
     hash::Hash,
+    fmt::Debug,
     marker::PhantomData,
     time::{Duration, Instant},
 };
@@ -69,6 +70,7 @@ where
             // spawn chunks
             for chunk in std::iter::once(current_chunk).chain(neighbors) {
                 if tracker.try_spawn(chunk) {
+                    println!("Spawning {:?}", chunk);
                     let pos = layout.chunk_to_space(&chunk);
 
                     // create entities for chunks
@@ -76,7 +78,7 @@ where
                         .spawn(PbrComponents {
                             mesh: placeholders.placeholder_mesh.unwrap(),
                             material: placeholders.placeholder_mat.unwrap(),
-                            translation: Translation::new(pos.x(), 0.0, pos.y()),
+                            translation: Translation::new(pos.x(), pos.y(), pos.z()),
                             ..Default::default()
                         })
                         .with(ChunkComponent {
@@ -116,8 +118,8 @@ where
     }
 }
 
-pub trait TileId: Eq + Hash + Sync + Send + Copy {}
-pub trait ChunkId: Eq + Hash + Sync + Send + Copy {}
+pub trait TileId: Eq + Hash + Sync + Send + Copy + Debug {}
+pub trait ChunkId: Eq + Hash + Sync + Send + Copy + Debug {}
 
 pub trait Layout: Sync + Send {
     type TTileId: TileId;
