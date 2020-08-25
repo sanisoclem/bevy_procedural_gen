@@ -97,9 +97,10 @@ impl DebugPlugin {
         mut query2: Query<(&crate::terrain::ChunkSiteComponent<crate::hex_layout::CubeHexCoord>, &Translation)>
     ) {
         for (site, translation) in &mut query2.iter() {
+            let tile = layout.space_to_tile(&translation);
             let current_chunk = layout.space_to_chunk(&translation);
             for mut text in &mut query.iter() {
-                text.value = format!("{:?}", current_chunk);
+                text.value = format!("{:?}, {:?}, {:?}", current_chunk, tile, translation);
             }
         }
     }

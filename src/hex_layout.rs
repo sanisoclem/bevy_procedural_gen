@@ -58,6 +58,9 @@ impl ExtrudedCubeHexCoord {
         ExtrudedCubeHexCoord(hex.0, hex.1, hex.2, height)
     }
 
+    pub fn from_xzh(x: i32, z: i32, h: i32) -> Self {
+        ExtrudedCubeHexCoord(x, -x -z, z, h)
+    }
     #[inline]
     pub fn h(&self) -> i32 {
         self.3
@@ -132,6 +135,19 @@ impl CubeHexLayout {
         CubeHexCoord(rx as i32, ry as i32, rz as i32)
     }
 
+    fn get_ring(&self, center: CubeHexCoord, distance: i32) -> Box<dyn Iterator<Item=CubeHexCoord>> {
+        Box::new((1..=distance).flat_map(move |i| {
+            let indexes = [i, distance - i, -distance];
+            // rotate 6 times
+            (0..6).map(move |rot| {
+                let m = if rot % 2 == 1 { -1 } else { 1 };
+                let xi = (0 + rot) % 3;
+                let yi = (1 + rot) % 3;
+                center + CubeHexCoord::from_axis_coord(indexes[xi] * m, indexes[yi] * m)
+            })
+        }))
+    }
+
     pub fn new(
         origin: CubeHexCoord,
         tile_radius: f32,
@@ -145,38 +161,38 @@ impl CubeHexLayout {
         let period = (3 * radius * radius) + offset_base;
         let half_period = (period - 1) / 2; // period is always odd
         let edge_length = radius + 1;
-        //println!("LOOKUPSTART");
+        //println!("LOOKUPSTART {:?}", radius);
         for &phase in ([1, -1]).iter() {
-            let mut bottom = edge_length + radius;
-            let mut current_slice = radius * 2;
+            let mut section_start = radius;
+            let mut upper = radius * 2;
+            let mut lower = radius + 1;
+            let mut isLower = true;
+
             for offset in 0..=half_period {
                 let key = if phase == 1 { offset } else { period - offset };
                 let chunk;
 
                 if offset <= radius {
                     chunk = CubeHexCoord::from_xz(offset * phase, 0);
-                } else if offset <= edge_length + radius {
-                    chunk = CubeHexCoord::from_xz(
-                        (offset - edge_length - radius) * phase,
-                        radius * phase,
-                    );
                 } else {
-                    let inner_offset = offset - bottom;
-                    let inner_phase = if current_slice % 2 == 0 { 1 } else { -1 };
-                    let x_offset = if current_slice % 2 == 0 {
-                        current_slice - radius
-                    } else {
-                        radius + 1
-                    };
+                    let inner_max = if isLower { lower } else { upper };
+                    let inner_offset = offset - section_start;
+                    let x_offset = if isLower { radius + 1 } else { inner_max - radius};
+                    let z_phase =  if isLower { 1 } else { -1 };
 
                     chunk = CubeHexCoord::from_xz(
                         (inner_offset - x_offset) * phase,
-                        ((radius + radius + 1) - current_slice) * -phase * inner_phase,
+                        ((radius + radius + 1) - inner_max) * phase * z_phase,
                     );
 
-                    if inner_offset + 1 > current_slice {
-                        bottom += current_slice;
-                        current_slice -= 1;
+                    if inner_offset + 1 > inner_max {
+                        if isLower {
+                            lower  += 1;
+                        } else {
+                            upper -= 1;
+                        };
+                        isLower = !isLower;
+                        section_start = offset;
                     }
                 }
 
@@ -209,8 +225,8 @@ impl Layout for CubeHexLayout {
         crate::mesh::mesh_hex_outline(
             Vec3::default(),
             Vec3::unit_y(),
-            Vec3::unit_x(),
-            1.0,
+            Vec3::unit_z() * -1.0,
+            self.chunk_radius(),
         )
     }
 
@@ -308,10 +324,10 @@ mod tests {
 
     proptest! {
         #[test]
-        fn neighbor_should_have_correct_distance_in_space(x1 in -10000i32..=10000, z1 in -10000i32..=10000, radius in 1i32..50, distance in 1i32..10) {
-            // TODO: doesnt work for arbitrary starting chunks
+        fn neighbor_should_have_correct_distance_in_space(x1 in -10000i32..=10000, z1 in -10000i32..=10000, x2 in -10000i32..=10000, z2 in -10000i32..=10000, radius in 1i32..50, distance in 1i32..10) {
             let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 1.0);
-            let chunk = CubeHexCoord::from_xz(0, 0);
+            let tile = ExtrudedCubeHexCoord::from_xzh(x2, z2, 0);
+            let chunk = layout.tile_to_chunk(&tile);
             let origin_space = layout.chunk_to_space(&chunk).0;
             let expected_distance_upper_bound = layout.chunk_diameter() * distance as f32;
             for neighbor in layout.get_chunk_neighbors(chunk, distance) {
@@ -320,11 +336,12 @@ mod tests {
                 assert!(result < expected_distance_upper_bound, "expected upper bound: {}, actual: {}, pointA: {}, pointB: {}", expected_distance_upper_bound, result, origin_space, neighbor_space);
             }
         }
+
         #[test]
-        fn neighbor_should_be_mutual(x1 in -10000i32..=10000, z1 in -10000i32..=10000, radius in 1i32..50, distance in 1i32..10) {
-            // TODO: doesnt work for arbitrary starting chunks
+        fn neighbor_should_be_mutual(x1 in -10000i32..=10000, z1 in -10000i32..=10000, x2 in -10000i32..=10000, z2 in -10000i32..=10000, radius in 1i32..50, distance in 1i32..10) {
             let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 1.0);
-            let chunk = CubeHexCoord::from_xz(0, 0);
+            let tile = ExtrudedCubeHexCoord::from_xzh(x2, z2, 0);
+            let chunk = layout.tile_to_chunk(&tile);
             for neighbor in layout.get_chunk_neighbors(chunk, distance) {
                 let ns: Vec<_> = layout.get_chunk_neighbors(neighbor, distance).collect();
                 let original: Vec<_> = ns.clone().into_iter().filter(|n| *n == chunk).collect();
@@ -344,7 +361,7 @@ mod tests {
 
         #[test]
         fn tile_space_coordinates_should_be_reversible(x1 in -10000i32..=10000, z1 in -10000i32..=10000, x2 in -10000i32..=10000, z2 in -10000i32..=10000, radius in 1i32..=50) {
-            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, 1, 1.0);
+            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 1.0);
             let tile = ExtrudedCubeHexCoord::new(CubeHexCoord::from_xz(x2, z2), 0);
             let space_coords = layout.tile_to_space(&tile);
             let result = layout.space_to_tile(&space_coords);
@@ -353,7 +370,7 @@ mod tests {
 
         #[test]
         fn chunk_space_coordinates_should_be_reversible(x1 in -10000i32..=10000, z1 in -10000i32..=10000, x2 in -10000i32..=10000, z2 in -10000i32..=10000, radius in 1i32..=50) {
-            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, 1, 1.0);
+            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 1.0);
             let tile = ExtrudedCubeHexCoord::new(CubeHexCoord::from_xz(x2, z2), 0);
             let chunk = layout.tile_to_chunk(&tile);
             let space_coords = layout.chunk_to_space(&chunk);
@@ -379,6 +396,24 @@ mod tests {
             let distance = chunk.distance_step(&tile.get_base());
             //println!("Lookup {:?}", layout.chunk_lookup);
             assert!(distance <= layout.chunk_radius_step(), "Expected upper bound: {:?}, distance: {:?}, tile: {:?}, chunk: {:?}", layout.chunk_radius_step(), distance, tile, chunk);
+        }
+
+        #[test]
+        fn tile_to_chunk_should_return_same_value_for_same_chunk(x1 in -10000i32..=10000, z1 in -10000i32..=10000, ring_num in 0i32..10, index in 0i32..1000, radius in 1i32..=50) {
+            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 1.0);
+
+            // find a random chunk via neighbors
+            let mut chunk = layout.space_origin;
+            for ring in 0..ring_num {
+                let mut n: Vec<_> = layout.get_chunk_neighbors(chunk,1).collect();
+                chunk = n.remove((index % n.len() as i32) as usize);
+            }
+            for ring in 1..=radius {
+                for tile in layout.get_ring(chunk, ring) {
+                    let result = layout.tile_to_chunk(&ExtrudedCubeHexCoord::new(tile, 0));
+                    assert_eq!(result, chunk, "Tile: {:?}, expected chunk: {:?}, actual: {:?}", tile, chunk, result);
+                }
+            }
         }
     }
 }

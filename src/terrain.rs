@@ -65,7 +65,7 @@ where
             }
 
             // find neighboring chunks
-            let neighbors = layout.get_chunk_neighbors(current_chunk, 1);
+            let neighbors = layout.get_chunk_neighbors(current_chunk, 5);
 
             // spawn chunks
             for chunk in std::iter::once(current_chunk).chain(neighbors) {
