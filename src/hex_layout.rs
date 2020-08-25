@@ -389,7 +389,7 @@ mod tests {
         }
 
         #[test]
-        fn tile_to_to_chunk_distance_should_be_radius_or_less(x1 in -10000i32..=10000, z1 in -10000i32..=10000, x2 in -10000i32..=10000, z2 in -10000i32..=10000, radius in 1i32..=50) {
+        fn tile_to_chunk_distance_should_be_radius_or_less(x1 in -10000i32..=10000, z1 in -10000i32..=10000, x2 in -10000i32..=10000, z2 in -10000i32..=10000, radius in 1i32..=50) {
             let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 1.0);
             let tile = ExtrudedCubeHexCoord::new(CubeHexCoord::from_xz(x2, z2), 0);
             let chunk = layout.tile_to_chunk(&tile);
@@ -403,7 +403,7 @@ mod tests {
             let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 1.0);
 
             // find a random chunk via neighbors
-            let mut chunk = layout.space_origin;
+            let mut chunk = CubeHexCoord::default();
             for ring in 0..ring_num {
                 let mut n: Vec<_> = layout.get_chunk_neighbors(chunk,1).collect();
                 chunk = n.remove((index % n.len() as i32) as usize);
