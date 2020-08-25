@@ -39,7 +39,7 @@ where
         mut materials: ResMut<Assets<StandardMaterial>>,
         mut placeholders: ResMut<Placeholders>,
     ) {
-        placeholders.placeholder_mat  = Some(materials.add(Color::rgb(0.1, 0.2, 0.1).into()));
+        placeholders.placeholder_mat = Some(materials.add(Color::rgb(0.1, 0.2, 0.1).into()));
         placeholders.placeholder_mesh = Some(meshes.add(layout.get_placeholder_mesh()));
     }
 
@@ -109,7 +109,8 @@ where
             // loop through all chunks and update distances
             for mut chunk in &mut query.iter() {
                 // TODO: handle multiple chunk sites
-                chunk.distance_to_nearest_site = layout.get_chunk_distance(&chunk.id, &site.last_loaded_chunk.unwrap());
+                chunk.distance_to_nearest_site =
+                    layout.get_chunk_distance(&chunk.id, &site.last_loaded_chunk.unwrap());
             }
         }
     }
@@ -126,7 +127,7 @@ pub trait Layout: Sync + Send {
     fn get_placeholder_mesh(&self) -> Mesh;
     fn get_chunk_neighbors(&self, chunk: Self::TChunkId, distance: i32) -> Self::TChunkIdIterator;
 
-    fn chunk_to_space(&self, chunk: &Self::TChunkId) -> Vec3;
+    fn chunk_to_space(&self, chunk: &Self::TChunkId) -> Translation;
     fn tile_to_chunk(&self, tile: &Self::TTileId) -> Self::TChunkId;
     fn tile_to_space(&self, tile: &Self::TTileId) -> Translation;
     fn space_to_tile(&self, space: &Vec3) -> Self::TTileId;

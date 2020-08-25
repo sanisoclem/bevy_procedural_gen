@@ -1,0 +1,29 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug app",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceRoot}/target/debug/bevy_procedural_gen.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": true,
+            "preLaunchTask": "cargo build",
+        },
+        {
+            "type": "cppvsdbg",
+            "request": "launch",
+            "name": "Debug Test",
+            "program": "c:/Users/me/.cargo/bin/cargo.exe",
+            "args": ["run"],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": true,
+        }
+    ]
+}
