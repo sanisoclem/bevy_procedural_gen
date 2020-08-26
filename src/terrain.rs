@@ -23,9 +23,9 @@ where
             .init_resource::<ChunkTracker<TChunkId>>()
             .init_resource::<TLayout>()
             .add_startup_system(Self::setup.system())
-            .add_system(Self::chunk_spawner.system())
             .add_system(Self::chunk_solver.system())
-            .add_system(Self::chunk_despawner.system());
+            .add_system(Self::chunk_despawner.system())
+            .add_system(Self::chunk_spawner.system());
     }
 }
 
@@ -67,12 +67,12 @@ where
             }
 
             // find neighboring chunks
-            let neighbors = layout.get_chunk_neighbors(current_chunk, 1);
+            let neighbors = layout.get_chunk_neighbors(current_chunk, 2);
 
             // spawn chunks
             for chunk in std::iter::once(current_chunk).chain(neighbors) {
                 if tracker.try_spawn(chunk) {
-                    println!("Spawning {:?}", chunk);
+                    //println!("Spawning {:?}", chunk);
                     let pos = layout.chunk_to_space(&chunk);
 
                     // create entities for chunks
@@ -99,13 +99,12 @@ where
 
     pub fn chunk_solver(
         layout: Res<TLayout>,
-        placeholders: Res<Placeholders>,
         mut materials: ResMut<Assets<StandardMaterial>>,
-        mut query: Query<(&mut ChunkComponent<TChunkId>)>,
-        mut site_query: Query<(Entity, &mut ChunkSiteComponent<TChunkId>)>,
+        mut query: Query<(&mut ChunkComponent<TChunkId>, &Handle<StandardMaterial>)>,
+        mut site_query: Query<&mut ChunkSiteComponent<TChunkId>>,
     ) {
         // compute chunk distances (for LODs and despawning)
-        for (_entity, mut site) in &mut site_query.iter() {
+        for mut site in &mut site_query.iter() {
             // don't do anything if the site hasn't moved
             if !site.fresh {
                 continue;
@@ -113,14 +112,19 @@ where
             site.fresh = false;
 
             // loop through all chunks and update distances
-            for (mut chunk) in &mut query.iter() {
+            for (mut chunk, mat) in &mut query.iter() {
                 // TODO: handle multiple chunk sites
+                let m = materials.get_mut(&mat).unwrap();
                 chunk.distance_to_nearest_site = layout.get_chunk_distance(&chunk.id, &site.last_loaded_chunk.unwrap());
-
-                let intensity = ((chunk.distance_to_nearest_site)  % 256) as f32 / 256.0;
-                println!("updating material {:?}", intensity);
-                //let m = materials.get_mut(&mat).unwrap();
-                //m.albedo = Color::rgb(intensity, 0.0, 0.0);
+                m.albedo = if chunk.distance_to_nearest_site == 0 {
+                    Color::rgb(0.1, 0.6, 0.1)
+                } else if chunk.distance_to_nearest_site == 1 {
+                    Color::rgb(0.1, 0.4, 0.8)
+                } else if chunk.distance_to_nearest_site == 2 {
+                    Color::rgb(0.6, 0.1, 0.1)
+                } else {
+                    Color::rgb(0.1, 0.1, 0.1)
+                };
              }
         }
     }

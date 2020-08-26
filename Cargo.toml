@@ -9,7 +9,7 @@ edition = "2018"
 
 [dependencies]
 noise = "0.6.0"
-bevy = { git = "https://github.com/bevyengine/bevy", branch = "master" }
+bevy = { git = "https://github.com/bevyengine/bevy", rev ="2dadc86fb003f64db5e6870a327fd0ed969881e5"}
 
 [dev-dependencies]
 proptest = "0.10.1"

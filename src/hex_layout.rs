@@ -160,8 +160,7 @@ impl CubeHexLayout {
         let offset_base = 3 * radius + 1;
         let period = (3 * radius * radius) + offset_base;
         let half_period = (period - 1) / 2; // period is always odd
-        let edge_length = radius + 1;
-        //println!("LOOKUPSTART {:?}", radius);
+
         for &phase in ([1, -1]).iter() {
             let mut section_start = radius;
             let mut upper = radius * 2;
@@ -196,7 +195,6 @@ impl CubeHexLayout {
                     }
                 }
 
-                //println!("{:?}", (key, chunk) );
                 chunk_lookup.insert(key, chunk);
             }
         }
@@ -213,7 +211,7 @@ impl CubeHexLayout {
 }
 impl Default for CubeHexLayout {
     fn default() -> Self {
-        CubeHexLayout::new(CubeHexCoord::default(), 1.0, 50, 1.0)
+        CubeHexLayout::new(CubeHexCoord::default(), 1.0, 3, 1.0)
     }
 }
 impl Layout for CubeHexLayout {
@@ -226,7 +224,7 @@ impl Layout for CubeHexLayout {
             Vec3::default(),
             Vec3::unit_y(),
             Vec3::unit_z() * -1.0,
-            self.chunk_radius() / 2.0,
+            self.chunk_radius() * 0.75,
         )
     }
 
@@ -297,8 +295,7 @@ impl Layout for CubeHexLayout {
     }
 
     fn get_chunk_distance(&self, a: &Self::TChunkId, b: &Self::TChunkId) -> i32 {
-        // TODO: fix, this returns distance in tiles not chunks
-        (i32::abs(a.0 - b.0) + i32::abs(a.1 - b.1) + i32::abs(a.2 - b.2)) / 2
+        (i32::abs(a.0 - b.0) + i32::abs(a.1 - b.1) + i32::abs(a.2 - b.2)) / (2 * self.chunk_diameter_step())
     }
 }
 
@@ -405,7 +402,7 @@ mod tests {
 
             // find a random chunk via neighbors
             let mut chunk = CubeHexCoord::default();
-            for ring in 0..ring_num {
+            for _ring in 0..ring_num {
                 let mut n: Vec<_> = layout.get_chunk_neighbors(chunk,1).collect();
                 chunk = n.remove((index % n.len() as i32) as usize);
             }

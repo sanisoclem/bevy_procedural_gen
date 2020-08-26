@@ -28,7 +28,7 @@ pub struct TopDownCameraOptions {
 impl Default for TopDownCameraOptions {
     fn default() -> Self {
         Self {
-            speed: 50.0,
+            speed: 100.0,
             sensitivity: 3.0,
         }
     }
