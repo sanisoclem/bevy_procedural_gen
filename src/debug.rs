@@ -80,7 +80,7 @@ impl DebugPlugin {
                                 value: "Text Example".to_string(),
                                 font: asset_server.load("assets/fonts/FiraSans-Bold.ttf").unwrap(),
                                 style: TextStyle {
-                                    font_size: 30.0,
+                                    font_size: 18.0,
                                     color: Color::WHITE,
                                 },
                             },
@@ -96,11 +96,12 @@ impl DebugPlugin {
         mut query: Query<&mut Text>,
         mut query2: Query<(&crate::terrain::ChunkSiteComponent<crate::hex_layout::CubeHexCoord>, &Translation)>
     ) {
-        for (site, translation) in &mut query2.iter() {
-            let tile = layout.space_to_tile(&translation);
+        for (_site, translation) in &mut query2.iter() {
+            let tile = layout.space_to_voxel(&translation);
             let current_chunk = layout.space_to_chunk(&translation);
             for mut text in &mut query.iter() {
                 text.value = format!("{:?}, {:?}, {:?}", current_chunk, tile, translation);
+                text.value = state.message.to_owned();
             }
         }
     }

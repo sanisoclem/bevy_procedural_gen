@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     hash::Hash,
     fmt::Debug,
     marker::PhantomData,
@@ -8,14 +8,14 @@ use std::{
 };
 
 #[derive(Default)]
-pub struct TerrainPlugin<'a, TChunkId, TTileId, TLayout> {
-    phantom: PhantomData<&'a (TChunkId, TTileId, TLayout)>,
+pub struct TerrainPlugin<'a, TChunkId, TVoxelId, TLayout> {
+    phantom: PhantomData<&'a (TChunkId, TVoxelId, TLayout)>,
 }
 
-impl<TChunkId, TTileId, TLayout> Plugin for TerrainPlugin<'static, TChunkId, TTileId, TLayout>
+impl<TChunkId, TVoxelId, TLayout> Plugin for TerrainPlugin<'static, TChunkId, TVoxelId, TLayout>
 where
     TChunkId: ChunkId,
-    TTileId: TileId,
+    TVoxelId: VoxelId,
     TLayout: Layout<TChunkId = TChunkId> + Default,
 {
     fn build(&self, app: &mut AppBuilder) {
@@ -29,10 +29,10 @@ where
     }
 }
 
-impl<TChunkId, TTileId, TLayout> TerrainPlugin<'static, TChunkId, TTileId, TLayout>
+impl<TChunkId, TVoxelId, TLayout> TerrainPlugin<'static, TChunkId, TVoxelId, TLayout>
 where
     TChunkId: 'static + ChunkId,
-    TTileId: 'static + TileId,
+    TVoxelId: 'static + VoxelId,
     TLayout: 'static + Layout<TChunkId = TChunkId>,
 {
     pub fn setup(
@@ -88,6 +88,7 @@ where
                             loaded: false,
                             created: time.instant.unwrap(),
                             distance_to_nearest_site: 0, // will be computed by another system
+                            voxels: HashMap::<TVoxelId,VoxelData>::new()
                         });
                 }
             }
@@ -100,7 +101,7 @@ where
     pub fn chunk_solver(
         layout: Res<TLayout>,
         mut materials: ResMut<Assets<StandardMaterial>>,
-        mut query: Query<(&mut ChunkComponent<TChunkId>, &Handle<StandardMaterial>)>,
+        mut query: Query<(&mut ChunkComponent<TChunkId, TVoxelId>, &Handle<StandardMaterial>)>,
         mut site_query: Query<&mut ChunkSiteComponent<TChunkId>>,
     ) {
         // compute chunk distances (for LODs and despawning)
@@ -130,15 +131,15 @@ where
     }
 
     pub fn chunk_despawner(
-        mut commands: Commands,
+        mut _commands: Commands,
         time: Res<Time>,
         mut tracker: ResMut<ChunkTracker<TChunkId>>,
-        mut query: Query<(Entity, &ChunkComponent<TChunkId>)>,
+        mut query: Query<(Entity, &ChunkComponent<TChunkId, TVoxelId>)>,
     ) {
         // only try to unload when timer is done
         tracker.despawn_timer.tick(time.delta_seconds);
         if tracker.despawn_timer.finished {
-            for (entity, chunk_info) in &mut query.iter() {
+            for (_entity, chunk_info) in &mut query.iter() {
                 if chunk_info.distance_to_nearest_site > tracker.min_despawn_distance {
                     // despawn chunk
                     // if tracker.try_despawn(chunk_info.id) {
@@ -157,11 +158,11 @@ where
 
 }
 
-pub trait TileId: Eq + Hash + Sync + Send + Copy + Debug {}
+pub trait VoxelId: Eq + Hash + Sync + Send + Copy + Debug {}
 pub trait ChunkId: Eq + Hash + Sync + Send + Copy + Debug {}
 
 pub trait Layout: Sync + Send {
-    type TTileId: TileId;
+    type TVoxelId: VoxelId;
     type TChunkId: ChunkId;
     type TChunkIdIterator: Iterator<Item = Self::TChunkId>;
 
@@ -169,9 +170,9 @@ pub trait Layout: Sync + Send {
     fn get_chunk_neighbors(&self, chunk: Self::TChunkId, distance: i32) -> Self::TChunkIdIterator;
 
     fn chunk_to_space(&self, chunk: &Self::TChunkId) -> Translation;
-    fn tile_to_chunk(&self, tile: &Self::TTileId) -> Self::TChunkId;
-    fn tile_to_space(&self, tile: &Self::TTileId) -> Translation;
-    fn space_to_tile(&self, space: &Vec3) -> Self::TTileId;
+    fn voxel_to_chunk(&self, tile: &Self::TVoxelId) -> Self::TChunkId;
+    fn voxel_to_space(&self, tile: &Self::TVoxelId) -> Translation;
+    fn space_to_voxel(&self, space: &Vec3) -> Self::TVoxelId;
     fn space_to_chunk(&self, space: &Vec3) -> Self::TChunkId;
 
     fn get_chunk_distance(&self, a: &Self::TChunkId, b: &Self::TChunkId) -> i32;
@@ -187,21 +188,20 @@ where
 }
 
 #[derive(Debug)]
-pub struct ChunkComponent<TChunk>
+pub struct VoxelData;
+
+#[derive(Debug)]
+pub struct ChunkComponent<TChunk, TVoxelId>
 where
     TChunk: ChunkId,
+    TVoxelId: VoxelId
 {
     pub id: TChunk,
     pub created: Instant,
     pub distance_to_nearest_site: i32,
     pub loaded: bool,
+    pub voxels: HashMap<TVoxelId, VoxelData>
 }
-
-// #[derive(Bundle)]
-// pub struct ChunkComponents<TChunk> where TChunk: ChunkId {
-//     pub chunk: ChunkComponent<TChunk>,
-//     //pub voxel: HexVoxelChunkComponent,
-// }
 
 pub struct ChunkTracker<TChunk>
 where
@@ -229,7 +229,6 @@ where
 {
     pub fn try_spawn(&mut self, chunk: TChunk) -> bool {
         if !self.loaded_chunks.contains(&chunk) {
-            //println!("spawn chunk {:?}", chunk);
             self.loaded_chunks.insert(chunk);
             true
         } else {

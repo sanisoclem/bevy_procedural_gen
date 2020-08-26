@@ -1,5 +1,7 @@
+#![allow(dead_code)]
 use bevy::prelude::*;
 use hex_layout::{CubeHexCoord, CubeHexLayout, ExtrudedCubeHexCoord};
+
 
 mod debug;
 mod hex_layout;
