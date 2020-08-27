@@ -225,7 +225,9 @@ pub trait Layout: Sync + Send {
     fn voxel_to_chunk(&self, tile: &Self::TVoxelId) -> Self::TChunkId;
     fn voxel_to_space(&self, tile: &Self::TVoxelId) -> Translation;
     fn space_to_voxel(&self, space: &Vec3) -> Self::TVoxelId;
-    fn space_to_chunk(&self, space: &Vec3) -> Self::TChunkId;
+    fn space_to_chunk(&self, space: &Vec3) -> Self::TChunkId {
+        self.voxel_to_chunk(&self.space_to_voxel(space))
+    }
 
     fn get_chunk_distance(&self, a: &Self::TChunkId, b: &Self::TChunkId) -> i32;
 }

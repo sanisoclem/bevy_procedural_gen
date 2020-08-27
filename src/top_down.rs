@@ -110,7 +110,7 @@ fn camera_movement_system(
     keyboard_input: Res<Input<KeyCode>>,
     mut query: Query<(
         &TopDownCameraOptions,
-        &crate::terrain::ChunkSiteComponent<crate::hex_layout::CubeHexCoord>,
+        &crate::terrain::ChunkSiteComponent<crate::cube_layout::ChunkCoord>,
         &mut Translation,
         &Rotation,
     )>,

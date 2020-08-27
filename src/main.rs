@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use bevy::prelude::*;
 use hex_layout::{CubeHexCoord, CubeHexLayout, ExtrudedCubeHexCoord};
+use cube_layout::{ChunkCoord, VoxelCoord, CubeLayout};
 use noise_generator::DefaultNoiseGenerator;
 
 mod debug;
@@ -9,16 +10,17 @@ mod mesh;
 mod noise_generator;
 mod terrain;
 mod top_down;
+mod cube_layout;
 
 fn main() {
     App::build()
         .add_resource(Msaa { samples: 4 })
         .add_default_plugins()
         .add_plugin(terrain::TerrainPlugin::<
-            CubeHexCoord,
-            ExtrudedCubeHexCoord,
-            CubeHexLayout,
-            DefaultNoiseGenerator<ExtrudedCubeHexCoord>,
+            ChunkCoord,
+            VoxelCoord,
+            CubeLayout,
+            DefaultNoiseGenerator<VoxelCoord>,
         >::default())
         .add_plugin(top_down::TopDownPlugin::default())
         .add_plugin(debug::DebugPlugin::default())
@@ -51,7 +53,7 @@ fn setup3d(
             ..Default::default()
         })
         .with(top_down::TopDownCameraOptions::default())
-        .with(terrain::ChunkSiteComponent::<hex_layout::CubeHexCoord>::default())
+        .with(terrain::ChunkSiteComponent::<cube_layout::ChunkCoord>::default())
         .with_children(|parent| {
             parent
                 .spawn(PbrComponents {
@@ -65,7 +67,7 @@ fn setup3d(
                 })
                 // camera
                 .spawn(top_down::TopDownCamera::create_facing(
-                    Vec3::new(0.0, 3.0, 20.0),
+                    Vec3::new(0.0, 0.0, 20.0),
                     Vec3::new(0.0, -8.0, 0.0),
                     Vec3::new(0.0, 1.0, 0.0),
                 ));

@@ -92,10 +92,10 @@ impl DebugPlugin {
 
     fn update_debug(
         state: Res<DebugState>,
-        layout: Res<crate::hex_layout::CubeHexLayout>,
+        layout: Res<crate::cube_layout::CubeLayout>,
         mut query: Query<&mut Text>,
         mut query2: Query<(
-            &crate::terrain::ChunkSiteComponent<crate::hex_layout::CubeHexCoord>,
+            &crate::terrain::ChunkSiteComponent<crate::cube_layout::ChunkCoord>,
             &Translation,
         )>,
     ) {

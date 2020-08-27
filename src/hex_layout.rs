@@ -357,10 +357,6 @@ impl Layout for CubeHexLayout {
         ExtrudedCubeHexCoord::from_hex2d(hex, y)
     }
 
-    fn space_to_chunk(&self, space: &Vec3) -> Self::TChunkId {
-        self.voxel_to_chunk(&self.space_to_voxel(space))
-    }
-
     fn get_chunk_distance(&self, a: &Self::TChunkId, b: &Self::TChunkId) -> i32 {
         a.distance_step(b) / self.chunk_voxel_diameter()
     }
