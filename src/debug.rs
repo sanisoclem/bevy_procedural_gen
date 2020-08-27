@@ -1,9 +1,9 @@
+use crate::terrain::*;
 use bevy::{
     core::Timer,
     diagnostic::{Diagnostic, Diagnostics, FrameTimeDiagnosticsPlugin},
     prelude::*,
 };
-use crate::terrain::*;
 use std::time::Duration;
 
 pub struct DebugPlugin {
@@ -94,7 +94,10 @@ impl DebugPlugin {
         state: Res<DebugState>,
         layout: Res<crate::hex_layout::CubeHexLayout>,
         mut query: Query<&mut Text>,
-        mut query2: Query<(&crate::terrain::ChunkSiteComponent<crate::hex_layout::CubeHexCoord>, &Translation)>
+        mut query2: Query<(
+            &crate::terrain::ChunkSiteComponent<crate::hex_layout::CubeHexCoord>,
+            &Translation,
+        )>,
     ) {
         for (_site, translation) in &mut query2.iter() {
             let tile = layout.space_to_voxel(&translation);

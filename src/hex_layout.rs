@@ -1,8 +1,9 @@
-use crate::terrain::{ChunkId, Layout, VoxelId};
+use crate::terrain::{ChunkId, Layout, VoxelId, VoxelData};
+use crate::mesh::{get_hex_vertices, calculate_normals};
 use bevy::{ecs::lazy_static::lazy_static, math::Mat2, prelude::*};
 use std::{
     hash::Hash,
-    ops::{Add, Sub},
+    ops::{Add, Sub}, collections::HashMap,
 };
 
 lazy_static! {
@@ -23,8 +24,23 @@ impl CubeHexCoord {
         CubeHexCoord(x, -(x + z), z)
     }
 
+    #[inline]
+    pub fn x(&self) -> i32 {
+        self.0
+    }
+
+    #[inline]
+    pub fn y(&self) -> i32 {
+        self.1
+    }
+
+    #[inline]
+    pub fn z(&self) -> i32 {
+        self.2
+    }
+
     pub fn from_fractional_xz(x: f32, z: f32) -> CubeHexCoord {
-        let y = -x -z;
+        let y = -x - z;
 
         let mut rx = x.round();
         let mut ry = y.round();
@@ -46,7 +62,7 @@ impl CubeHexCoord {
     }
 
     pub fn distance_step(&self, b: &CubeHexCoord) -> i32 {
-        (i32::abs(self.0 - b.0) + i32::abs(self.1 - b.1) + i32::abs(self.2 - b.2)) / 2
+        (i32::abs(self.x() - b.x()) + i32::abs(self.y() - b.y()) + i32::abs(self.z() - b.z())) / 2
     }
 }
 impl Add for CubeHexCoord {
@@ -54,7 +70,11 @@ impl Add for CubeHexCoord {
 
     #[inline]
     fn add(self, other: Self) -> Self {
-        Self(self.0 + other.0, self.1 + other.1, self.2 + other.2)
+        Self(
+            self.x() + other.x(),
+            self.y() + other.y(),
+            self.z() + other.z(),
+        )
     }
 }
 impl Sub for CubeHexCoord {
@@ -62,7 +82,11 @@ impl Sub for CubeHexCoord {
 
     #[inline]
     fn sub(self, other: Self) -> Self {
-        Self(self.0 - other.0, self.1 - other.1, self.2 - other.2)
+        Self(
+            self.x() - other.x(),
+            self.y() - other.y(),
+            self.z() - other.z(),
+        )
     }
 }
 impl ChunkId for CubeHexCoord {}
@@ -71,11 +95,26 @@ impl ChunkId for CubeHexCoord {}
 pub struct ExtrudedCubeHexCoord(pub i32, pub i32, pub i32, pub i32);
 impl ExtrudedCubeHexCoord {
     pub fn from_hex2d(hex: CubeHexCoord, height: i32) -> Self {
-        ExtrudedCubeHexCoord(hex.0, hex.1, hex.2, height)
+        ExtrudedCubeHexCoord(hex.x(), hex.y(), hex.z(), height)
     }
 
     pub fn from_xzh(x: i32, z: i32, h: i32) -> Self {
-        ExtrudedCubeHexCoord(x, -x -z, z, h)
+        ExtrudedCubeHexCoord(x, -x - z, z, h)
+    }
+
+    #[inline]
+    pub fn x(&self) -> i32 {
+        self.0
+    }
+
+    #[inline]
+    pub fn y(&self) -> i32 {
+        self.1
+    }
+
+    #[inline]
+    pub fn z(&self) -> i32 {
+        self.2
     }
 
     #[inline]
@@ -85,10 +124,22 @@ impl ExtrudedCubeHexCoord {
 
     #[inline]
     pub fn get_base(&self) -> CubeHexCoord {
-        CubeHexCoord(self.0, self.1, self.2)
+        CubeHexCoord(self.x(), self.y(), self.z())
     }
 }
-impl VoxelId for ExtrudedCubeHexCoord {}
+impl VoxelId for ExtrudedCubeHexCoord {
+    fn u(&self) -> i32 {
+        self.x()
+    }
+
+    fn v(&self) -> i32 {
+        self.y()
+    }
+
+    fn h(&self) -> i32 {
+        self.h()
+    }
+}
 
 pub struct CubeHexLayout {
     pub space_origin: CubeHexCoord,
@@ -96,13 +147,15 @@ pub struct CubeHexLayout {
     voxel_height: f32,
     chunk_voxel_radius: i32,
     chunk_voxel_period: i32,
+    chunk_voxel_height: i32,
     chunk_lookup: Vec<CubeHexCoord>,
 }
 impl CubeHexLayout {
     #[inline]
     pub fn chunk_radius(&self) -> f32 {
-        self.chunk_diameter()/2.0
+        self.chunk_diameter() / 2.0
     }
+
     #[inline]
     pub fn chunk_diameter(&self) -> f32 {
         self.chunk_voxel_diameter() as f32 * self.voxel_diameter()
@@ -128,7 +181,11 @@ impl CubeHexLayout {
         self.voxel_radius * 2.0
     }
 
-    fn get_ring(&self, center: CubeHexCoord, distance: i32) -> Box<dyn Iterator<Item=CubeHexCoord>> {
+    fn get_ring<'a>(
+        &'a self,
+        center: CubeHexCoord,
+        distance: i32,
+    ) -> Box<(dyn Iterator<Item = CubeHexCoord> + 'a)> {
         Box::new((1..=distance).flat_map(move |i| {
             let indexes = [i, distance - i, -distance];
             // rotate 6 times
@@ -146,7 +203,7 @@ impl CubeHexLayout {
         let offset_base = 3 * radius + 1;
         let period = (3 * radius * radius) + offset_base;
         let half_period = (period - 1) / 2; // period is always odd
-        let mut chunk_lookup = vec![CubeHexCoord::default(); period as usize + 1 ];
+        let mut chunk_lookup = vec![CubeHexCoord::default(); period as usize + 1];
 
         for &phase in ([1, -1]).iter() {
             let mut section_start = radius;
@@ -162,8 +219,12 @@ impl CubeHexLayout {
                 } else {
                     let inner_max = if is_lower { lower } else { upper };
                     let inner_offset = offset - section_start;
-                    let x_offset = if is_lower { radius + 1 } else { inner_max - radius};
-                    let z_phase =  if is_lower { 1 } else { -1 };
+                    let x_offset = if is_lower {
+                        radius + 1
+                    } else {
+                        inner_max - radius
+                    };
+                    let z_phase = if is_lower { 1 } else { -1 };
 
                     chunk_lookup[key] = CubeHexCoord::from_xz(
                         (inner_offset - x_offset) * phase,
@@ -172,7 +233,7 @@ impl CubeHexLayout {
 
                     if inner_offset + 1 > inner_max {
                         if is_lower {
-                            lower  += 1;
+                            lower += 1;
                         } else {
                             upper -= 1;
                         };
@@ -189,14 +250,16 @@ impl CubeHexLayout {
         origin: CubeHexCoord,
         voxel_radius: f32,
         chunk_radius: i32,
+        chunk_height: i32,
         voxel_extrusion_height: f32,
     ) -> Self {
         let (period, lookup) = Self::build_lookup(chunk_radius);
         CubeHexLayout {
             space_origin: origin,
-            voxel_radius: voxel_radius,
+            voxel_radius,
             voxel_height: voxel_extrusion_height,
             chunk_voxel_radius: chunk_radius,
+            chunk_voxel_height: chunk_height,
             chunk_lookup: lookup,
             chunk_voxel_period: period,
         }
@@ -204,13 +267,13 @@ impl CubeHexLayout {
 }
 impl Default for CubeHexLayout {
     fn default() -> Self {
-        CubeHexLayout::new(CubeHexCoord::default(), 1.0, 50, 1.0)
+        CubeHexLayout::new(CubeHexCoord::default(), 1.0, 3, 20, 1.0)
     }
 }
 impl Layout for CubeHexLayout {
     type TChunkId = CubeHexCoord;
     type TChunkIdIterator = Box<dyn Iterator<Item = CubeHexCoord>>;
-    type TVoxelId =  ExtrudedCubeHexCoord;
+    type TVoxelId = ExtrudedCubeHexCoord;
 
     fn get_placeholder_mesh(&self) -> Mesh {
         crate::mesh::mesh_hex_plane(
@@ -219,6 +282,9 @@ impl Layout for CubeHexLayout {
             Vec3::unit_z() * -1.0,
             self.chunk_radius() * 0.75,
         )
+    }
+    fn get_chunk_mesh(&self, voxels: &mut HashMap<Self::TVoxelId, VoxelData>) -> Mesh {
+       todo!()
     }
 
     fn get_chunk_neighbors(&self, chunk: Self::TChunkId, distance: i32) -> Self::TChunkIdIterator {
@@ -246,6 +312,18 @@ impl Layout for CubeHexLayout {
         }))
     }
 
+    fn get_chunk_voxels(&self, chunk: &Self::TChunkId) -> Vec<Self::TVoxelId> {
+        std::iter::once(chunk.clone())
+            .chain(
+                (1..=self.chunk_voxel_radius()).flat_map(|ring| self.get_ring(chunk.clone(), ring)),
+            )
+            .flat_map(|base_hex| {
+                (0..=self.chunk_voxel_height)
+                    .map(move |h| ExtrudedCubeHexCoord::from_hex2d(base_hex, h))
+            })
+            .collect()
+    }
+
     fn chunk_to_space(&self, chunk: &Self::TChunkId) -> Translation {
         self.voxel_to_space(&ExtrudedCubeHexCoord::from_hex2d(*chunk, 0))
     }
@@ -255,7 +333,7 @@ impl Layout for CubeHexLayout {
         let offset_base = 3 * radius + 1;
         let x_offset_based_on_z = (voxel.2 * offset_base) % self.chunk_voxel_period;
         let x_transposed_axis = x_offset_based_on_z - voxel.0; // chunk center if multiple of period
-        let x_closest = x_transposed_axis % self.chunk_voxel_period ;
+        let x_closest = x_transposed_axis % self.chunk_voxel_period;
         let x_upper = if x_closest < 0 {
             x_closest + self.chunk_voxel_period
         } else {
@@ -267,12 +345,9 @@ impl Layout for CubeHexLayout {
 
     fn voxel_to_space(&self, voxel: &Self::TVoxelId) -> Translation {
         let transposed = voxel.get_base() - self.space_origin;
-        let result = HEX2SPACE.mul_vec2(Vec2::new(transposed.0 as f32, transposed.2 as f32)) * self.voxel_radius;
-        Translation::new(
-            result.x(),
-            voxel.h() as f32 * self.voxel_height,
-            result.y(),
-        )
+        let result = HEX2SPACE.mul_vec2(Vec2::new(transposed.x() as f32, transposed.z() as f32))
+            * self.voxel_radius;
+        Translation::new(result.x(), voxel.h() as f32 * self.voxel_height, result.y())
     }
 
     fn space_to_voxel(&self, space: &Vec3) -> Self::TVoxelId {
@@ -302,20 +377,20 @@ mod tests {
         fn from_xz_coords_must_total_to_zero(x in -10000i32..10000,
                                         z in -10000i32..10000) {
             let coord = CubeHexCoord::from_xz(x, z);
-            prop_assert_eq!(coord.0 + coord.1 + coord.2, 0);
+            prop_assert_eq!(coord.x() + coord.y() + coord.z(), 0);
         }
         #[test]
         fn from_axis_coords_must_total_to_zero(q in -10000i32..10000,
                                         r in -10000i32..10000) {
             let coord = CubeHexCoord::from_axis_coord(q, r);
-            prop_assert_eq!(coord.0 + coord.1 + coord.2, 0);
+            prop_assert_eq!(coord.x() + coord.y() + coord.z(), 0);
         }
     }
 
     proptest! {
         #[test]
         fn neighbor_should_have_correct_distance_in_space(x1 in -10000i32..=10000, z1 in -10000i32..=10000, x2 in -10000i32..=10000, z2 in -10000i32..=10000, radius in 1i32..50, distance in 1i32..10) {
-            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 1.0);
+            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 20, 1.0);
             let voxel = ExtrudedCubeHexCoord::from_xzh(x2, z2, 0);
             let chunk = layout.voxel_to_chunk(&voxel);
             let origin_space = layout.chunk_to_space(&chunk).0;
@@ -329,7 +404,7 @@ mod tests {
 
         #[test]
         fn neighbor_should_be_mutual(x1 in -10000i32..=10000, z1 in -10000i32..=10000, x2 in -10000i32..=10000, z2 in -10000i32..=10000, radius in 1i32..50, distance in 1i32..10) {
-            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 1.0);
+            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 20, 1.0);
             let voxel = ExtrudedCubeHexCoord::from_xzh(x2, z2, 0);
             let chunk = layout.voxel_to_chunk(&voxel);
             for neighbor in layout.get_chunk_neighbors(chunk, distance) {
@@ -342,7 +417,7 @@ mod tests {
 
         #[test]
         fn chunk_space_coordinates_should_be_zero_when_at_origin(x1 in -10000i32..=10000, z1 in -10000i32..=10000, radius in 1i32..50) {
-            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 1.0);
+            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 20, 1.0);
             let coords = layout.chunk_to_space(&layout.space_origin);
             assert_eq!(coords.x(), 0.0);
             assert_eq!(coords.y(), 0.0);
@@ -351,7 +426,7 @@ mod tests {
 
         #[test]
         fn voxel_space_coordinates_should_be_reversible(x1 in -10000i32..=10000, z1 in -10000i32..=10000, x2 in -10000i32..=10000, z2 in -10000i32..=10000, radius in 1i32..=50) {
-            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 1.0);
+            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 20, 1.0);
             let voxel = ExtrudedCubeHexCoord::from_xzh(x2, z2, 0);
             let space_coords = layout.voxel_to_space(&voxel);
             let result = layout.space_to_voxel(&space_coords);
@@ -360,7 +435,7 @@ mod tests {
 
         #[test]
         fn chunk_space_coordinates_should_be_reversible(x1 in -10000i32..=10000, z1 in -10000i32..=10000, x2 in -10000i32..=10000, z2 in -10000i32..=10000, radius in 1i32..=50) {
-            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 1.0);
+            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 20, 1.0);
             let voxel = ExtrudedCubeHexCoord::from_xzh(x2, z2, 0);
             let chunk = layout.voxel_to_chunk(&voxel);
             let space_coords = layout.chunk_to_space(&chunk);
@@ -370,7 +445,7 @@ mod tests {
 
         #[test]
         fn voxel_should_resolve_to_same_chunk_in_space(x1 in -10000i32..=10000, z1 in -10000i32..=10000, x2 in -10000i32..=10000, z2 in -10000i32..=10000, radius in 1i32..=50) {
-            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 1.0);
+            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 20, 1.0);
             let voxel = ExtrudedCubeHexCoord::from_xzh(x2, z2, 0);
             let space_coords = layout.voxel_to_space(&voxel);
             let space_chunk = layout.space_to_chunk(&space_coords);
@@ -380,7 +455,7 @@ mod tests {
 
         #[test]
         fn voxel_to_chunk_distance_should_be_radius_or_less(x1 in -10000i32..=10000, z1 in -10000i32..=10000, x2 in -10000i32..=10000, z2 in -10000i32..=10000, radius in 1i32..=50) {
-            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 1.0);
+            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 20, 1.0);
             let voxel = ExtrudedCubeHexCoord::from_xzh(x2, z2, 0);
             let chunk = layout.voxel_to_chunk(&voxel);
             let distance = chunk.distance_step(&voxel.get_base());
@@ -389,7 +464,7 @@ mod tests {
 
         #[test]
         fn voxel_to_chunk_should_return_same_value_for_same_chunk(x1 in -10000i32..=10000, z1 in -10000i32..=10000, ring_num in 0i32..10, index in 0i32..1000, radius in 1i32..=50) {
-            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 1.0);
+            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, 20,  1.0);
 
             // find a random chunk via neighbors
             let mut chunk = CubeHexCoord::default();
@@ -403,6 +478,17 @@ mod tests {
                     assert_eq!(result, chunk, "Voxel: {:?}, expected chunk: {:?}, actual: {:?}", voxel, chunk, result);
                 }
             }
+        }
+
+        #[test]
+        fn chunk_should_have_correct_number_of_voxels(x1 in -10000i32..=10000, z1 in -10000i32..=10000, x2 in -10000i32..=10000, z2 in -10000i32..=10000, radius in 1i32..=50, height in 0i32..=50) {
+            let layout = CubeHexLayout::new(CubeHexCoord::from_xz(x1, z1), 1.0, radius, height, 1.0);
+
+            let voxel = ExtrudedCubeHexCoord::from_xzh(x2, z2, 0);
+            let chunk = layout.voxel_to_chunk(&voxel);
+            let voxel_count = layout.get_chunk_voxels(&chunk).len() as i32;
+            let expected = ((3 * radius * radius) + (3 * radius) + 1) * (height + 1); // 6 triangle cross-sections (excl center), each section has a number of voxels equal to the nth triangle number * height
+            assert_eq!(expected, voxel_count);
         }
     }
 }

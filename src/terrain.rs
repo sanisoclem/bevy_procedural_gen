@@ -1,26 +1,29 @@
 use bevy::prelude::*;
 use std::{
     collections::{HashMap, HashSet},
-    hash::Hash,
     fmt::Debug,
+    hash::Hash,
     marker::PhantomData,
     time::{Duration, Instant},
 };
 
 #[derive(Default)]
-pub struct TerrainPlugin<'a, TChunkId, TVoxelId, TLayout> {
-    phantom: PhantomData<&'a (TChunkId, TVoxelId, TLayout)>,
+pub struct TerrainPlugin<'a, TChunkId, TVoxelId, TLayout, TGenerator> {
+    phantom: PhantomData<&'a (TChunkId, TVoxelId, TLayout, TGenerator)>,
 }
 
-impl<TChunkId, TVoxelId, TLayout> Plugin for TerrainPlugin<'static, TChunkId, TVoxelId, TLayout>
+impl<TChunkId, TVoxelId, TLayout, TGenerator> Plugin
+    for TerrainPlugin<'static, TChunkId, TVoxelId, TLayout, TGenerator>
 where
     TChunkId: ChunkId,
     TVoxelId: VoxelId,
-    TLayout: Layout<TChunkId = TChunkId> + Default,
+    TLayout: Layout<TChunkId = TChunkId, TVoxelId = TVoxelId> + Default,
+    TGenerator: TerrainGenerator<TVoxelId = TVoxelId> + Default,
 {
     fn build(&self, app: &mut AppBuilder) {
         app.init_resource::<Placeholders>()
             .init_resource::<ChunkTracker<TChunkId>>()
+            .init_resource::<TGenerator>()
             .init_resource::<TLayout>()
             .add_startup_system(Self::setup.system())
             .add_system(Self::chunk_solver.system())
@@ -29,11 +32,13 @@ where
     }
 }
 
-impl<TChunkId, TVoxelId, TLayout> TerrainPlugin<'static, TChunkId, TVoxelId, TLayout>
+impl<TChunkId, TVoxelId, TLayout, TGenerator>
+    TerrainPlugin<'static, TChunkId, TVoxelId, TLayout, TGenerator>
 where
     TChunkId: 'static + ChunkId,
     TVoxelId: 'static + VoxelId,
-    TLayout: 'static + Layout<TChunkId = TChunkId>,
+    TLayout: 'static + Layout<TChunkId = TChunkId, TVoxelId = TVoxelId>,
+    TGenerator: 'static + TerrainGenerator<TVoxelId = TVoxelId>,
 {
     pub fn setup(
         layout: Res<TLayout>,
@@ -83,12 +88,12 @@ where
                             translation: Translation::new(pos.x(), pos.y(), pos.z()),
                             ..Default::default()
                         })
-                        .with(ChunkComponent {
+                        .with(ChunkComponent::<TChunkId, TVoxelId> {
                             id: chunk,
                             loaded: false,
                             created: time.instant.unwrap(),
                             distance_to_nearest_site: 0, // will be computed by another system
-                            voxels: HashMap::<TVoxelId,VoxelData>::new()
+                            voxels: None,
                         });
                 }
             }
@@ -101,7 +106,10 @@ where
     pub fn chunk_solver(
         layout: Res<TLayout>,
         mut materials: ResMut<Assets<StandardMaterial>>,
-        mut query: Query<(&mut ChunkComponent<TChunkId, TVoxelId>, &Handle<StandardMaterial>)>,
+        mut query: Query<(
+            &mut ChunkComponent<TChunkId, TVoxelId>,
+            &Handle<StandardMaterial>,
+        )>,
         mut site_query: Query<&mut ChunkSiteComponent<TChunkId>>,
     ) {
         // compute chunk distances (for LODs and despawning)
@@ -116,22 +124,62 @@ where
             for (mut chunk, mat) in &mut query.iter() {
                 // TODO: handle multiple chunk sites
                 let m = materials.get_mut(&mat).unwrap();
-                chunk.distance_to_nearest_site = layout.get_chunk_distance(&chunk.id, &site.last_loaded_chunk.unwrap());
-                m.albedo = if chunk.distance_to_nearest_site == 0 {
+                chunk.distance_to_nearest_site =
+                    layout.get_chunk_distance(&chunk.id, &site.last_loaded_chunk.unwrap());
+                m.albedo = if chunk.distance_to_nearest_site <= 1 {
                     Color::rgb(0.1, 0.6, 0.1)
-                } else if chunk.distance_to_nearest_site == 1 {
+                } else if chunk.distance_to_nearest_site <= 5 {
                     Color::rgb(0.1, 0.4, 0.8)
-                } else if chunk.distance_to_nearest_site == 2 {
+                } else if chunk.distance_to_nearest_site < 10 {
                     Color::rgb(0.6, 0.1, 0.1)
                 } else {
                     Color::rgb(0.1, 0.1, 0.1)
                 };
-             }
+            }
+        }
+    }
+
+    pub fn chunk_mesh_builder(
+        layout: Res<TLayout>,
+        meshes: ResMut<Assets<Mesh>>,
+        mut query: Query<(&mut ChunkComponent<TChunkId, TVoxelId>, &mut Handle<Mesh>)>,
+    ) {
+        // build chunk mesh
+        for (mut chunk , mut mesh)in &mut query.iter() {
+            // skip loaded chunks or chunnks without voxels yet
+            if chunk.voxels.is_none() || chunk.loaded { continue; }
+
+            //*mesh = meshes.add(layout.get_chunk_mesh(&mut chunk.voxels.unwrap()));
+            chunk.loaded = true;
+        }
+    }
+
+    pub fn voxel_loader(
+        layout: Res<TLayout>,
+        generator: Res<TGenerator>,
+        mut query: Query<&mut ChunkComponent<TChunkId, TVoxelId>>,
+    ) {
+        // load voxel data
+        for mut chunk in &mut query.iter() {
+            if let Some(_) = chunk.voxels {
+                continue;
+            }
+
+            let mut voxels = layout
+                .get_chunk_voxels(&chunk.id)
+                .into_iter()
+                .map(|id| (id, VoxelData::default()))
+                .collect();
+            generator.generate_voxel_data(&mut voxels);
+            chunk.voxels = Some(voxels);
+
+            // only load one voxel per frame
+            break;
         }
     }
 
     pub fn chunk_despawner(
-        mut _commands: Commands,
+        mut commands: Commands,
         time: Res<Time>,
         mut tracker: ResMut<ChunkTracker<TChunkId>>,
         mut query: Query<(Entity, &ChunkComponent<TChunkId, TVoxelId>)>,
@@ -139,13 +187,12 @@ where
         // only try to unload when timer is done
         tracker.despawn_timer.tick(time.delta_seconds);
         if tracker.despawn_timer.finished {
-            for (_entity, chunk_info) in &mut query.iter() {
+            for (entity, chunk_info) in &mut query.iter() {
                 if chunk_info.distance_to_nearest_site > tracker.min_despawn_distance {
                     // despawn chunk
-                    // if tracker.try_despawn(chunk_info.id) {
-                    //     commands.despawn(entity);
-                    //     println!("despawning: {:?}", chunk_info.id)
-                    // }
+                    if tracker.try_despawn(chunk_info.id) {
+                        commands.despawn(entity);
+                    }
                     // TODO: queue and cleanup tasks
                 }
             }
@@ -155,10 +202,13 @@ where
         // find chunks that can be unloaded
         // mark them for despawning
     }
-
 }
 
-pub trait VoxelId: Eq + Hash + Sync + Send + Copy + Debug {}
+pub trait VoxelId: Eq + Hash + Sync + Send + Copy + Debug {
+    fn u(&self) -> i32;
+    fn v(&self) -> i32;
+    fn h(&self) -> i32;
+}
 pub trait ChunkId: Eq + Hash + Sync + Send + Copy + Debug {}
 
 pub trait Layout: Sync + Send {
@@ -167,7 +217,9 @@ pub trait Layout: Sync + Send {
     type TChunkIdIterator: Iterator<Item = Self::TChunkId>;
 
     fn get_placeholder_mesh(&self) -> Mesh;
+    fn get_chunk_mesh(&self, voxels: &mut HashMap<Self::TVoxelId,VoxelData>) -> Mesh;
     fn get_chunk_neighbors(&self, chunk: Self::TChunkId, distance: i32) -> Self::TChunkIdIterator;
+    fn get_chunk_voxels(&self, chunk: &Self::TChunkId) -> Vec<Self::TVoxelId>;
 
     fn chunk_to_space(&self, chunk: &Self::TChunkId) -> Translation;
     fn voxel_to_chunk(&self, tile: &Self::TVoxelId) -> Self::TChunkId;
@@ -176,6 +228,18 @@ pub trait Layout: Sync + Send {
     fn space_to_chunk(&self, space: &Vec3) -> Self::TChunkId;
 
     fn get_chunk_distance(&self, a: &Self::TChunkId, b: &Self::TChunkId) -> i32;
+}
+
+pub trait TerrainGenerator: Sync + Send {
+    type TVoxelId: VoxelId;
+
+    fn scale(&self) -> Vec3;
+    fn set_scale(&mut self, scale: Vec3);
+    fn bias(&self) -> f32;
+    fn set_bias(&mut self, scale: f32);
+
+    //fn get_voxel_value(&self, voxel: &Self::TVoxelId) -> f32;
+    fn generate_voxel_data(&self, buffer: &mut HashMap<Self::TVoxelId, VoxelData>);
 }
 
 #[derive(Default, Debug)]
@@ -187,20 +251,22 @@ where
     pub fresh: bool,
 }
 
-#[derive(Debug)]
-pub struct VoxelData;
+#[derive(Debug, Default)]
+pub struct VoxelData {
+    pub value: f32,
+}
 
 #[derive(Debug)]
 pub struct ChunkComponent<TChunk, TVoxelId>
 where
     TChunk: ChunkId,
-    TVoxelId: VoxelId
+    TVoxelId: VoxelId,
 {
     pub id: TChunk,
     pub created: Instant,
     pub distance_to_nearest_site: i32,
     pub loaded: bool,
-    pub voxels: HashMap<TVoxelId, VoxelData>
+    pub voxels: Option<HashMap<TVoxelId, VoxelData>>,
 }
 
 pub struct ChunkTracker<TChunk>
@@ -219,7 +285,7 @@ where
         ChunkTracker {
             loaded_chunks: HashSet::new(),
             despawn_timer: Timer::new(Duration::from_secs(1), true),
-            min_despawn_distance: 500,
+            min_despawn_distance: 10,
         }
     }
 }

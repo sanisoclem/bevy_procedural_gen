@@ -1,11 +1,12 @@
 #![allow(dead_code)]
 use bevy::prelude::*;
 use hex_layout::{CubeHexCoord, CubeHexLayout, ExtrudedCubeHexCoord};
-
+use noise_generator::DefaultNoiseGenerator;
 
 mod debug;
 mod hex_layout;
 mod mesh;
+mod noise_generator;
 mod terrain;
 mod top_down;
 
@@ -17,6 +18,7 @@ fn main() {
             CubeHexCoord,
             ExtrudedCubeHexCoord,
             CubeHexLayout,
+            DefaultNoiseGenerator<ExtrudedCubeHexCoord>,
         >::default())
         .add_plugin(top_down::TopDownPlugin::default())
         .add_plugin(debug::DebugPlugin::default())
