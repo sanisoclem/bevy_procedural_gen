@@ -131,5 +131,6 @@ fn camera_movement_system(
         let delta_float = Vec3::unit_y() * axis_float * options.speed * time.delta_seconds;
 
         translation.0 += delta_f + delta_strafe + delta_float;
+        if translation.y() < 8.0 { translation.set_y(8.0); }
     }
 }
