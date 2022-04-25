@@ -1,3 +1,5 @@
+use bevy::tasks::Task;
+use bevy::tasks::AsyncComputeTaskPool;
 use bevy::{math::Mat2, prelude::*};
 use lazy_static::*;
 use std::{
@@ -207,7 +209,7 @@ impl CubicVoxelLayout {
 }
 impl Default for CubicVoxelLayout {
   fn default() -> Self {
-    Self::new(ChunkId::default(), 1.0, 50, 10)
+    Self::new(ChunkId::default(), 1.0, 11, 10)
   }
 }
 

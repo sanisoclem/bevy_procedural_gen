@@ -1398,6 +1398,7 @@ name = "gen_terrain"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "futures-lite",
  "lazy_static",
  "noise",
  "proptest",

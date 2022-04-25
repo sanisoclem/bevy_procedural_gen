@@ -1,4 +1,7 @@
 use bevy::prelude::*;
+use bevy::tasks::AsyncComputeTaskPool;
+use bevy::tasks::Task;
+use futures_lite::future;
 use std::collections::HashMap;
 
 // module organization doesn't make sense
@@ -11,6 +14,12 @@ mod mesher;
 mod tracker;
 
 use layout::*;
+
+// #[derive(Debug)]
+// pub enum VoxelTerrainEvents {
+//   ChunkSpawned(Entity),
+//   ChunkDespawned(Entity)
+// }
 
 #[derive(Default, Debug, Component)]
 pub struct ChunkSpawner {
@@ -39,16 +48,19 @@ impl Plugin for VoxelTerrainPlugin {
       .init_resource::<generator::VoxelGenerator>()
       .init_resource::<layout::CubicVoxelLayout>()
       .add_system(spawn_chunks)
-      .add_system(solve_chunks)
+      .add_system(calc_chunk_distances)
       .add_system(load_voxels)
-      .add_system(generate_chunk_mesh)
+      .add_system(build_chunk_mesh)
+      .add_system(attach_chunk_mesh)
       .add_system(despawn_chunks);
   }
 }
 
 pub fn spawn_chunks(
   mut commands: Commands,
+  thread_pool: Res<AsyncComputeTaskPool>,
   layout: Res<layout::CubicVoxelLayout>,
+  generator: Res<generator::VoxelGenerator>,
   mut tracker: ResMut<tracker::ChunkTracker>,
   mut query: Query<(&Transform, &mut ChunkSpawner)>,
 ) {
@@ -72,6 +84,16 @@ pub fn spawn_chunks(
         // println!("Spawning {:?}", chunk);
         let pos = layout.chunk_to_space(&chunk);
 
+        let voxel_buffer = layout
+          .get_chunk_voxels(&chunk)
+          .into_iter()
+          .map(|id| (id, generator::VoxelType::Air))
+          .collect();
+
+        // TODO: the voxel data might be better off in a resource
+        // this allows access to the voxel data from an async task
+        let load_voxels_task = generator.load_voxel_data(&thread_pool, voxel_buffer);
+
         // create entities for chunks
         commands
           .spawn()
@@ -79,7 +101,8 @@ pub fn spawn_chunks(
           .insert(Chunk {
             id: chunk,
             distance_to_nearest_spawner: 0., // will be computed by another system
-          });
+          })
+          .insert(load_voxels_task);
       }
     }
 
@@ -88,7 +111,7 @@ pub fn spawn_chunks(
   }
 }
 
-pub fn solve_chunks(
+pub fn calc_chunk_distances(
   layout: Res<layout::CubicVoxelLayout>,
   mut query: Query<&mut Chunk>,
   mut site_query: Query<&mut ChunkSpawner>,
@@ -120,39 +143,51 @@ pub fn solve_chunks(
   }
 }
 
-pub fn load_voxels(
-  mut commands: Commands,
-  layout: Res<layout::CubicVoxelLayout>,
-  generator: Res<generator::VoxelGenerator>,
-  query: Query<(Entity, &Chunk), Added<Chunk>>,
-) {
-  // load voxel data
-  for (entity, chunk) in query.iter() {
-    let mut voxels = layout
-      .get_chunk_voxels(&chunk.id)
-      .into_iter()
-      .map(|id| (id, generator::VoxelType::Air))
-      .collect();
-
-    generator.get_voxels(&mut voxels);
-    commands.entity(entity).insert(ChunkVoxelData { voxels });
+pub fn load_voxels(mut commands: Commands, mut tasks: Query<(Entity, &Chunk, &mut Task<ChunkVoxelData>)>) {
+  // check if voxel data load task is complete
+  for (entity, chunk, mut task) in tasks.iter_mut() {
+    if let Some(voxel_data) = future::block_on(future::poll_once(&mut *task)) {
+      info!("voxels loaded for {:?}", chunk.id);
+      // Add our new PbrBundle of components to our tagged entity
+      commands
+        .entity(entity)
+        .insert(voxel_data)
+        .remove::<Task<ChunkVoxelData>>();
+    }
   }
 }
 
-pub fn generate_chunk_mesh(
+pub fn build_chunk_mesh(
+  mut commands: Commands,
+  thread_pool: Res<AsyncComputeTaskPool>,
+  query: Query<(Entity, &Chunk, &ChunkVoxelData), Without<Handle<Mesh>>>,
+) {
+  for (entity, chunk, voxel_data) in query.iter() {
+    let gen_mesh_task = mesher::generate_mesh(&thread_pool, &voxel_data.voxels, 0);
+    info!("generating mesh for {:?}", chunk.id);
+
+    commands.entity(entity).insert(gen_mesh_task);
+  }
+}
+
+pub fn attach_chunk_mesh(
+  layout: Res<layout::CubicVoxelLayout>,
   mut commands: Commands,
   mut meshes: ResMut<Assets<Mesh>>,
   mut materials: ResMut<Assets<StandardMaterial>>,
-  query: Query<(Entity, &ChunkVoxelData), Without<Handle<Mesh>>>,
+  mut tasks: Query<(Entity, &Chunk, &mut Task<Mesh>), Without<Handle<Mesh>>>,
 ) {
-  for (entity, voxel_data) in query.iter() {
-    let mesh = mesher::generate_mesh(&voxel_data.voxels, 0);
+  for (entity, chunk, mut task) in tasks.iter_mut() {
+    if let Some(mesh) = future::block_on(future::poll_once(&mut *task)) {
+    info!("generated mesh for {:?}", chunk.id);
 
-    commands.entity(entity).insert_bundle(PbrBundle {
-      mesh: meshes.add(mesh),
-      material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
-      ..default()
-    });
+      commands.entity(entity).insert_bundle(PbrBundle {
+        mesh: meshes.add(mesh),
+        material: materials.add(Color::rgb(0.5, 0.0, 0.3).into()),
+        transform: Transform::from_translation(layout.chunk_to_space(&chunk.id)),
+        ..default()
+      });
+    }
   }
 }
 
