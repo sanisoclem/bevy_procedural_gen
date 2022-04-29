@@ -14,7 +14,9 @@ fn main() {
     .insert_resource(Msaa { samples: 4 })
     .add_plugins(DefaultPlugins)
     .add_plugin(VoxelTerrainPlugin)
+    .add_plugin(gen_camera::RtsCameraPlugin)
     .add_startup_system(setup)
+    .add_system(add_chunk_spawner)
     .run();
 }
 
@@ -40,11 +42,13 @@ fn setup(
     transform: Transform::from_xyz(4.0, 8.0, 4.0),
     ..default()
   });
-  // camera
-  commands
-    .spawn_bundle(PerspectiveCameraBundle {
-      transform: Transform::from_xyz(-2.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
-      ..default()
-    })
-    .insert(ChunkSpawner::default());
+}
+
+fn add_chunk_spawner(
+  mut commands: Commands,
+  qry: Query<Entity, (With<gen_camera::RtsCamera>, Without<ChunkSpawner>)>,
+) {
+  for entity in qry.iter() {
+    commands.entity(entity).insert(ChunkSpawner::default());
+  }
 }

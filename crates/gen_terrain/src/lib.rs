@@ -1,3 +1,3 @@
 mod voxel;
 
-pub use voxel::{VoxelTerrainPlugin, ChunkSpawner};
+pub use voxel::{ChunkSpawner, VoxelTerrainPlugin};

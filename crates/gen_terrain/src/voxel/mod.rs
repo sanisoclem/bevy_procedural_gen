@@ -1,6 +1,7 @@
-use bevy::prelude::*;
-use bevy::tasks::AsyncComputeTaskPool;
-use bevy::tasks::Task;
+use bevy::{
+  prelude::*,
+  tasks::{AsyncComputeTaskPool, Task},
+};
 use futures_lite::future;
 use std::collections::HashMap;
 
@@ -143,7 +144,10 @@ pub fn calc_chunk_distances(
   }
 }
 
-pub fn load_voxels(mut commands: Commands, mut tasks: Query<(Entity, &Chunk, &mut Task<ChunkVoxelData>)>) {
+pub fn load_voxels(
+  mut commands: Commands,
+  mut tasks: Query<(Entity, &Chunk, &mut Task<ChunkVoxelData>)>,
+) {
   // check if voxel data load task is complete
   for (entity, chunk, mut task) in tasks.iter_mut() {
     if let Some(voxel_data) = future::block_on(future::poll_once(&mut *task)) {
@@ -179,7 +183,7 @@ pub fn attach_chunk_mesh(
 ) {
   for (entity, chunk, mut task) in tasks.iter_mut() {
     if let Some(mesh) = future::block_on(future::poll_once(&mut *task)) {
-    info!("generated mesh for {:?}", chunk.id);
+      info!("generated mesh for {:?}", chunk.id);
 
       commands.entity(entity).insert_bundle(PbrBundle {
         mesh: meshes.add(mesh),

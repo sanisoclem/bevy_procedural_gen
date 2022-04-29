@@ -1,5 +1,5 @@
-use bevy::prelude::*;
 use super::ChunkId;
+use bevy::prelude::*;
 use std::collections::HashSet;
 
 #[derive(Default)]

@@ -1,0 +1,7 @@
+[package]
+name = "gen_camera"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { git = "https://github.com/bevyengine/bevy", rev ="26c3b20f1ce1e04fcd37816d35fdff4d8433064f"}

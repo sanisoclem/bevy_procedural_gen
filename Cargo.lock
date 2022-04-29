@@ -510,6 +510,7 @@ name = "bevy_procedural_gen"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "gen_camera",
  "gen_terrain",
 ]
 
@@ -1383,6 +1384,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
 dependencies = [
  "byteorder",
+]
+
+[[package]]
+name = "gen_camera"
+version = "0.1.0"
+dependencies = [
+ "bevy",
 ]
 
 [[package]]

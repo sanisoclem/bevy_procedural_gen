@@ -1,6 +1,8 @@
-use bevy::tasks::Task;
-use bevy::tasks::AsyncComputeTaskPool;
-use bevy::{math::Mat2, prelude::*};
+use bevy::{
+  math::Mat2,
+  prelude::*,
+  tasks::{AsyncComputeTaskPool, Task},
+};
 use lazy_static::*;
 use std::{
   hash::Hash,
